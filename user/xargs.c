@@ -20,6 +20,7 @@ int read_line(char *arg) {
 			arg[index++] = buf;
 		}
 	}
+	// if end of file, return -1.
 	return -1;
 }
 
@@ -41,7 +42,7 @@ int main(int argc, char *argv[]) {
 			wait(0);
 			// child process
 		} else {
-			int res = exec(args[0], (char**)args);
+			int res = exec(args[0], args);
 			printf("exe fail res: %d\n", res);
 		}
 
