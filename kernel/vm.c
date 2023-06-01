@@ -340,6 +340,42 @@ uvmclear(pagetable_t pagetable, uint64 va)
   *pte &= ~PTE_U;
 }
 
+void
+print_pte(pte_t pte, int level, int rank) {
+	for (int i = 3; i > level; i--) {
+		printf(" ..");
+	}
+	printf("%d:", rank);
+	printf(" pte %p", pte);
+	printf(" pa %p", PTE2PA(pte));
+	printf("\n");
+}
+
+
+void helper(pagetable_t pagetable, int level) {
+	if (level < 0) {
+		printf("strange thing happens: the page-table level should not be less than 0\n");
+		return;
+	}
+	for (int i = 0; i < 512; i++) {
+		pte_t pte = pagetable[i];
+		if ((pte & PTE_V)) {
+			print_pte(pte, level, i);
+			uint64 child = PTE2PA(pte);
+			// if not the leaf pte, do the recursion.
+			if ((pte & (PTE_R|PTE_W|PTE_X)) == 0) {
+				helper((pagetable_t)child, level-1);
+			}
+		}
+	}
+}
+
+void
+vmprint(pagetable_t pagetable) {
+	printf("page table %p\n", pagetable);
+	helper(pagetable, 2);
+}
+
 // Copy from kernel to user.
 // Copy len bytes from src to virtual address dstva in a given page table.
 // Return 0 on success, -1 on error.
