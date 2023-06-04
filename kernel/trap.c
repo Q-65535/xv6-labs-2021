@@ -77,8 +77,22 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  if(which_dev == 2) {
+	if (p->tick == p->interval) {
+	  // when we are already in the handler, just ignore the alarm.
+	  // ok
+	} else if (p->interval == 0 && p->alarm_handler == 0) {
+	  // when both interval and handler address are 0, we ignore the alarm.
+	  // ok
+	} else if (++p->tick == p->interval) {
+	  // save trapframe for sigreturn.
+	  *(p->sigret_trapframe) = *(p->trapframe);
+	  // set the user pc to alarm handler so the handler is executed
+	  // when user mode is resumed.
+	  p->trapframe->epc = p->alarm_handler;
+	}
     yield();
+  }
 
   usertrapret();
 }
