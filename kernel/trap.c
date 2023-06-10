@@ -65,6 +65,33 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if (r_scause() == 15) {
+	uint64 va = r_stval();
+	uint64 va0 = PGROUNDDOWN(va);
+	pte_t *pte;
+	if ((pte = walk(p->pagetable, va, 0)) == 0) {
+	  printf("usertrap(): page fault, no such page");
+	  printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+	  p->killed = 1;
+	  // @todo: deal with PTE_V flag
+	} else if ((*pte & PTE_COW) == 0) {
+	  printf("usertrap(): this page is not writable originally!\n");
+	  p->killed = 1;
+	} else {
+      uint64 pre_pa = PTE2PA(*pte);
+      char *new_pa = kalloc();
+      if (new_pa == 0) {
+        printf("usertrap(): cannot allocate new physical page\n");
+		p->killed = 1;
+      }
+      memmove((void*)new_pa, (void*)pre_pa, PGSIZE);
+	  uint64 flags = PTE_FLAGS(*pte);
+	  flags = (flags | PTE_W) & ~PTE_COW;
+	  // @Clearness: this is kind of implicit since pte is not used
+	  uvmunmap(p->pagetable, va0, 1, 1);
+	  mappages(p->pagetable, va0, PGSIZE, (uint64)new_pa, flags);
+	}
+
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {

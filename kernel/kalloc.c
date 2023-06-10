@@ -23,6 +23,31 @@ struct {
   struct run *freelist;
 } kmem;
 
+// @Hardcode: 100 physical pages are assumed.
+int ref_counts[999];
+
+uint64
+pa2index(uint64 pa) {
+  return pa / PGSIZE;
+}
+
+void
+increment_ref(uint64 pa) {
+  uint64 index = pa2index(pa);
+  ref_counts[index]++;
+}
+void
+decrement_ref(uint64 pa) {
+  uint64 index = pa2index(pa);
+  ref_counts[index]--;
+}
+
+int
+get_ref_count(uint64 pa) {
+  uint64 index = pa2index(pa);
+  return ref_counts[index];
+}
+
 void
 kinit()
 {
@@ -37,6 +62,10 @@ freerange(void *pa_start, void *pa_end)
   p = (char*)PGROUNDUP((uint64)pa_start);
   for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
     kfree(p);
+  // init the ref_counts
+  for (int i = 0; i < 100; i++) {
+	ref_counts[i] = 0;
+  }
 }
 
 // Free the page of physical memory pointed at by v,
@@ -51,15 +80,22 @@ kfree(void *pa)
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
+  uint64 index = pa2index((uint64)pa);
+
+  ref_counts[index]--;
+
+  // only when the reference count is 0 we free it.
+  if (ref_counts[index] == 0) {
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
 
   r = (struct run*)pa;
 
-  acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
-  release(&kmem.lock);
+	acquire(&kmem.lock);
+	r->next = kmem.freelist;
+	kmem.freelist = r;
+	release(&kmem.lock);
+  }
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -76,7 +112,11 @@ kalloc(void)
     kmem.freelist = r->next;
   release(&kmem.lock);
 
-  if(r)
+  if(r) {
     memset((char*)r, 5, PGSIZE); // fill with junk
+	uint64 index = pa2index((uint64)r);
+	ref_counts[index] = 1;
+  }
+
   return (void*)r;
 }
