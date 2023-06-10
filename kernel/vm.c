@@ -322,7 +322,6 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if(mappages(new, i, PGSIZE, pa, flags) != 0){
       goto err;
     }
-	// @? maybe this should go to mappages()?
 	increment_ref(pa);
   }
   return 0;
@@ -365,10 +364,13 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 	  memmove((void*) new_pa, (void*)pre_pa, PGSIZE);
 	  uint64 flags = PTE_FLAGS(*pte);
 	  flags = (flags | PTE_W) & ~PTE_COW;
-	  // @Clearness: this is kind of implicit since pte is not used
+
+	  // remap
 	  uvmunmap(pagetable, va0, 1, 1);
-	  mappages(pagetable, va0, PGSIZE, (uint64)new_pa, flags);
+	  mappages(pagetable, va0, 1, (uint64)new_pa, flags);
+
 	}
+
     pa0 = PTE2PA(*pte);
     if(pa0 == 0)
       return -1;
