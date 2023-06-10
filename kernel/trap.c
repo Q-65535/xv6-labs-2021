@@ -29,6 +29,44 @@ trapinithart(void)
   w_stvec((uint64)kernelvec);
 }
 
+int
+cow_alloc(pagetable_t pagetable, uint64 va)
+{
+	uint64 va0 = PGROUNDDOWN(va);
+	pte_t *pte = walk(pagetable, va0, 0);
+	uint64 pre_pa = PTE2PA(*pte);
+	char *new_pa = kalloc();
+	if (new_pa == 0)
+	  return 0;
+	memmove((void*)new_pa, (void*)pre_pa, PGSIZE);
+	uint64 flags = PTE_FLAGS(*pte);
+	flags = (flags | PTE_W) & ~PTE_COW;
+	//remap
+	uvmunmap(pagetable, va0, 1, 1);
+	mappages(pagetable, va0, 1, (uint64)new_pa, flags);
+	return 1;
+}
+
+int
+is_valid_cow(pagetable_t pagetable, uint64 va)
+{
+  if (va >= MAXVA)
+	return 0;
+  pte_t *pte = walk(pagetable, va, 0);
+  if (pte == 0)
+	return 0;
+  if ((*pte & PTE_COW) == 0)
+	return 0;
+  if ((*pte & PTE_W))
+	return 0;
+  if ((*pte & PTE_V) == 0)
+	return 0;
+  if ((*pte & PTE_U) == 0)
+	return 0;
+
+  return 1;
+}
+
 //
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
@@ -65,37 +103,15 @@ usertrap(void)
     intr_on();
 
     syscall();
-  } else if (r_scause() == 15 || r_scause() == 13) {
-	// we allocate a new page for this va.
+
+	// handle page fault
+  } else if (r_scause() == 15) {
 	uint64 va = r_stval();
-	uint64 va0 = PGROUNDDOWN(va);
-	pte_t *pte;
-	if ((pte = walk(p->pagetable, va0, 0)) == 0) {
-	  printf("usertrap(): page fault, no such page");
-	  printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+	if (is_valid_cow(p->pagetable, va) == 0){
 	  p->killed = 1;
-	} else if ((*pte & PTE_COW) == 0) {
-	  printf("usertrap(): this page is not writable originally!\n");
+	} else if (cow_alloc(p->pagetable, va) == 0) {
 	  p->killed = 1;
-	} else {
-      uint64 pre_pa = PTE2PA(*pte);
-      char *new_pa = kalloc();
-      if (new_pa == 0) {
-        printf("usertrap(): cannot allocate new physical page\n");
-		p->killed = 1;
-      }
-      memmove((void*)new_pa, (void*)pre_pa, PGSIZE);
-
-	  uint64 flags = PTE_FLAGS(*pte);
-	  flags = (flags | PTE_W) & ~PTE_COW;
-
-	  //remap
-	  uvmunmap(p->pagetable, va0, 1, 1);
-	  mappages(p->pagetable, va0, 1, (uint64)new_pa, flags);
-
-	  /* printf("in usertrap(): after remap\n"); */
 	}
-
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
