@@ -355,20 +355,11 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
 	pte_t *pte = walk(pagetable, va0, 0);
+
+	// for cow
 	if (*pte & PTE_COW) {
-	  uint64 pre_pa = PTE2PA(*pte);
-	  char *new_pa = kalloc();
-	  if (new_pa == 0) {
+	  if (cow_alloc(pagetable, va0) == 0)
 		return -1;
-	  }
-	  memmove((void*) new_pa, (void*)pre_pa, PGSIZE);
-	  uint64 flags = PTE_FLAGS(*pte);
-	  flags = (flags | PTE_W) & ~PTE_COW;
-
-	  // remap
-	  uvmunmap(pagetable, va0, 1, 1);
-	  mappages(pagetable, va0, 1, (uint64)new_pa, flags);
-
 	}
 
     pa0 = PTE2PA(*pte);
