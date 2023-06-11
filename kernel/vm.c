@@ -354,11 +354,21 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
+    if (va0 >= MAXVA) {
+      printf("copyout: va exceeds MAXVA\n");
+      return -1;
+    }
+
 	pte_t *pte = walk(pagetable, va0, 0);
+	if (pte == 0 || (*pte & PTE_U) == 0 || (*pte & PTE_V) == 0) {
+	  printf("copyout: invalid pte\n");
+	  return -1;
+	}
 
 	// for cow
-	if (*pte & PTE_COW) {
-	  if (cow_alloc(pagetable, va0) == 0)
+	if (is_valid_cow(pagetable, va0) == 0) {
+	  printf("copyout(): ok, cow is valid.\n");
+	  if (cow_alloc(pagetable, va0) < 0)
 		return -1;
 	}
 

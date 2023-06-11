@@ -36,35 +36,49 @@ cow_alloc(pagetable_t pagetable, uint64 va)
 	pte_t *pte = walk(pagetable, va0, 0);
 	uint64 pre_pa = PTE2PA(*pte);
 	char *new_pa = kalloc();
-	if (new_pa == 0)
-	  return 0;
+	if (new_pa == 0) {
+	  printf("kalloc failed\n");
+	  return -1;
+	}
 	memmove((void*)new_pa, (void*)pre_pa, PGSIZE);
 	uint64 flags = PTE_FLAGS(*pte);
 	flags = (flags | PTE_W) & ~PTE_COW;
 	//remap
 	uvmunmap(pagetable, va0, 1, 1);
 	mappages(pagetable, va0, 1, (uint64)new_pa, flags);
-	return 1;
+	return 0;
 }
 
 int
 is_valid_cow(pagetable_t pagetable, uint64 va)
 {
-  if (va >= MAXVA)
-	return 0;
+  if (va >= MAXVA) {
+	printf("not valid cow: cowalloc: exceeds MAXVA\n");
+	return -1;
+  }
   pte_t *pte = walk(pagetable, va, 0);
-  if (pte == 0)
-	return 0;
-  if ((*pte & PTE_COW) == 0)
-	return 0;
-  if ((*pte & PTE_W))
-	return 0;
-  if ((*pte & PTE_V) == 0)
-	return 0;
-  if ((*pte & PTE_U) == 0)
-	return 0;
+  if (pte == 0) {
+	printf("not valid cow: pte does not exist\n");
+	return -1;
+  }
+  if ((*pte & PTE_COW) == 0) {
+	/* printf("not valid cow: not marked as cow!!\n"); */
+	return -1;
+  }
+  if ((*pte & PTE_W)) {
+	printf("not valid cow: not marked as read-only!!\n");
+	return -1;
+  }
+  if ((*pte & PTE_V) == 0) {
+	printf("not valid cow: invalid pte\n");
+	return -1;
+  }
+  if ((*pte & PTE_U) == 0) {
+	printf("not valid cow: doesn't have user permission\n");
+	return -1;
+  }
 
-  return 1;
+  return 0;
 }
 
 //
@@ -107,9 +121,9 @@ usertrap(void)
 	// handle page fault
   } else if (r_scause() == 15) {
 	uint64 va = r_stval();
-	if (is_valid_cow(p->pagetable, va) == 0){
+	if (is_valid_cow(p->pagetable, va) < 0){
 	  p->killed = 1;
-	} else if (cow_alloc(p->pagetable, va) == 0) {
+	} else if (cow_alloc(p->pagetable, va) < 0) {
 	  p->killed = 1;
 	}
   } else if((which_dev = devintr()) != 0){
