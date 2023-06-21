@@ -355,7 +355,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
     if (va0 >= MAXVA) {
-      printf("copyout: va exceeds MAXVA\n");
+      /* printf("copyout: va exceeds MAXVA\n"); */
       return -1;
     }
 
@@ -367,7 +367,6 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 
 	// for cow
 	if (is_valid_cow(pagetable, va0) == 0) {
-	  printf("copyout(): ok, cow is valid.\n");
 	  if (cow_alloc(pagetable, va0) < 0)
 		return -1;
 	}
