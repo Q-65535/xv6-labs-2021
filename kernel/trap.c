@@ -33,6 +33,75 @@ trapinithart(void)
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
 //
+
+int
+is_valid_cow(pagetable_t pagetable, uint64 va)
+{
+  pte_t *pte;
+  uint64 va0 = PGROUNDDOWN(va);
+
+  if (va > MAXVA) {
+	printf("va exceeds maximum");
+	return -1;
+  }
+
+  pte = walk(pagetable, va0, 0);
+  if(pte == 0) {
+	printf("pte is 0");
+    return -1;
+  }
+  if((*pte & PTE_V) == 0) {
+	printf("pte is not valid");
+    return -1;
+  }
+  if((*pte & PTE_U) == 0) {
+	printf("pte is not for user");
+    return -1;
+  }
+  if((*pte & PTE_W) != 0) {
+	printf("pte is not read-only");
+    return -1;
+  }
+  if((*pte & PTE_COW) == 0) {
+	printf("pte is not marked as COW");
+    return -1;
+  }
+  return 0;
+}
+
+int
+cow_alloc(pagetable_t pagetable, uint64 va)
+{
+  /* printf("inside cow_alloc\n"); */
+  pte_t *pte;
+  uint64 old_pa;
+  uint64 new_pa;
+  uint flags;
+  uint64 va0 = PGROUNDDOWN(va);
+
+  pte = walk(pagetable, va0, 0);
+  old_pa = PTE2PA(*pte);
+  if ((new_pa = (uint64)kalloc()) == 0) {
+	return -1;
+  }
+  memmove((void*)new_pa, (void*)old_pa, PGSIZE);
+  flags = PTE_FLAGS(*pte);
+  flags = flags | PTE_W;
+  flags = flags & (~PTE_COW);
+
+  /* uint64 v_bit; */
+  /* v_bit = *pte & PTE_V; */
+  /* printf("valid bit: %d\n", v_bit); */
+
+  // remap
+  uvmunmap(pagetable, va0, 1, 1);
+  if (mappages(pagetable, va0, PGSIZE, new_pa, flags) != 0){
+    return -1;
+  }
+
+  return 0;
+}
+
 void
 usertrap(void)
 {
@@ -65,6 +134,15 @@ usertrap(void)
     intr_on();
 
     syscall();
+	// for cow
+  } else if(r_scause() == 15){
+	/* printf("dealing with page fault\n"); */
+	uint64 va = r_stval();
+	if (is_valid_cow(p->pagetable, va) == 0) {
+	  if (cow_alloc(p->pagetable, va) < 0) {
+		panic("cow failed");
+	  }
+	}
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
