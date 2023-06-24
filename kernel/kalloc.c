@@ -25,10 +25,10 @@ struct {
 
 int refs[PHYSTOP/PGSIZE];
 
-int
+uint64
 addr2index(void* addr)
 {
-  return (int)(((uint64)addr)/PGSIZE);
+  return (((uint64)addr)/PGSIZE);
 }
 
 int
@@ -71,9 +71,10 @@ freerange(void *pa_start, void *pa_end)
 {
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
-  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
+  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE) {
 	increment_ref(p);
     kfree(p);
+  }
 }
 
 // Free the page of physical memory pointed at by v,
@@ -85,8 +86,17 @@ kfree(void *pa)
 {
   struct run *r;
 
-  if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
-    panic("kfree");
+  if(((uint64)pa % PGSIZE) != 0)
+    panic("kfree: pa not aligned\n");
+
+  if((char*)pa < end)
+    panic("kfree: pa is less than end\n");
+
+  if((uint64)pa >= PHYSTOP)
+    panic("kfree: pa is greater than PHYSTOP\n");
+
+  /* if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP) */
+  /*   panic("kfree"); */
 
   decrement_ref(pa);
 

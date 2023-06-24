@@ -29,19 +29,15 @@ trapinithart(void)
   w_stvec((uint64)kernelvec);
 }
 
-//
-// handle an interrupt, exception, or system call from user space.
-// called from trampoline.S
-//
-
+// Return 0 on success, -1 on error.
 int
 is_valid_cow(pagetable_t pagetable, uint64 va)
 {
   pte_t *pte;
   uint64 va0 = PGROUNDDOWN(va);
 
-  if (va > MAXVA) {
-	printf("va exceeds maximum");
+  if (va >= MAXVA) {
+	/* printf("va exceeds maximum"); */
 	return -1;
   }
 
@@ -51,19 +47,19 @@ is_valid_cow(pagetable_t pagetable, uint64 va)
     return -1;
   }
   if((*pte & PTE_V) == 0) {
-	printf("pte is not valid");
+	/* printf("pte is not valid"); */
     return -1;
   }
   if((*pte & PTE_U) == 0) {
-	printf("pte is not for user");
+	/* printf("pte is not for user"); */
     return -1;
   }
   if((*pte & PTE_W) != 0) {
-	printf("pte is not read-only");
+	/* printf("pte is not read-only"); */
     return -1;
   }
   if((*pte & PTE_COW) == 0) {
-	printf("pte is not marked as COW");
+	/* printf("pte is not marked as COW"); */
     return -1;
   }
   return 0;
@@ -102,6 +98,10 @@ cow_alloc(pagetable_t pagetable, uint64 va)
   return 0;
 }
 
+//
+// handle an interrupt, exception, or system call from user space.
+// called from trampoline.S
+//
 void
 usertrap(void)
 {
@@ -138,10 +138,10 @@ usertrap(void)
   } else if(r_scause() == 15){
 	/* printf("dealing with page fault\n"); */
 	uint64 va = r_stval();
-	if (is_valid_cow(p->pagetable, va) == 0) {
-	  if (cow_alloc(p->pagetable, va) < 0) {
-		panic("cow failed");
-	  }
+	if (is_valid_cow(p->pagetable, va) < 0) {
+	  p->killed = 1;
+	} else if (cow_alloc(p->pagetable, va) < 0) {
+	  p->killed = 1;
 	}
   } else if((which_dev = devintr()) != 0){
     // ok
