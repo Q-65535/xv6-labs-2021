@@ -326,15 +326,50 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       goto err;
     }
 	increment_ref((void*)pa);
-    /* if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){ */
-    /*   goto err; */
-    /* } */
   }
+  // the number of pages will be allocated for forking this process
+  page_count_naive += sz/PGSIZE;
   return 0;
 
  err:
   uvmunmap(new, 0, i / PGSIZE, 1);
   return -1;
+}
+
+int
+cow_alloc(pagetable_t pagetable, uint64 va)
+{
+  /* printf("inside cow_alloc\n"); */
+  pte_t *pte;
+  uint64 old_pa;
+  uint64 new_pa;
+  uint flags;
+  uint64 va0 = PGROUNDDOWN(va);
+
+  pte = walk(pagetable, va0, 0);
+  old_pa = PTE2PA(*pte);
+  if ((new_pa = (uint64)kalloc()) == 0) {
+	return -1;
+  }
+  memmove((void*)new_pa, (void*)old_pa, PGSIZE);
+  flags = PTE_FLAGS(*pte);
+  flags = flags | PTE_W;
+  flags = flags & (~PTE_COW);
+
+  /* uint64 v_bit; */
+  /* v_bit = *pte & PTE_V; */
+  /* printf("valid bit: %d\n", v_bit); */
+
+  // remap
+  uvmunmap(pagetable, va0, 1, 1);
+  if (mappages(pagetable, va0, PGSIZE, new_pa, flags) != 0){
+    return -1;
+  }
+  // cow alloc success, increment page count
+  page_count_with_cow++;
+  // print the page counts
+	printf("(naive fork page count)/(cow fork page count) = %d/%d\n", page_count_naive, page_count_with_cow);
+  return 0;
 }
 
 // mark a PTE invalid for user access.

@@ -8,6 +8,8 @@
 
 struct spinlock tickslock;
 uint ticks;
+uint page_count_naive = 0;
+uint page_count_with_cow = 0;
 
 extern char trampoline[], uservec[], userret[];
 
@@ -65,38 +67,6 @@ is_valid_cow(pagetable_t pagetable, uint64 va)
   return 0;
 }
 
-int
-cow_alloc(pagetable_t pagetable, uint64 va)
-{
-  /* printf("inside cow_alloc\n"); */
-  pte_t *pte;
-  uint64 old_pa;
-  uint64 new_pa;
-  uint flags;
-  uint64 va0 = PGROUNDDOWN(va);
-
-  pte = walk(pagetable, va0, 0);
-  old_pa = PTE2PA(*pte);
-  if ((new_pa = (uint64)kalloc()) == 0) {
-	return -1;
-  }
-  memmove((void*)new_pa, (void*)old_pa, PGSIZE);
-  flags = PTE_FLAGS(*pte);
-  flags = flags | PTE_W;
-  flags = flags & (~PTE_COW);
-
-  /* uint64 v_bit; */
-  /* v_bit = *pte & PTE_V; */
-  /* printf("valid bit: %d\n", v_bit); */
-
-  // remap
-  uvmunmap(pagetable, va0, 1, 1);
-  if (mappages(pagetable, va0, PGSIZE, new_pa, flags) != 0){
-    return -1;
-  }
-
-  return 0;
-}
 
 //
 // handle an interrupt, exception, or system call from user space.
@@ -136,13 +106,20 @@ usertrap(void)
     syscall();
 	// for cow
   } else if(r_scause() == 15){
-	/* printf("dealing with page fault\n"); */
-	uint64 va = r_stval();
-	if (is_valid_cow(p->pagetable, va) < 0) {
-	  p->killed = 1;
-	} else if (cow_alloc(p->pagetable, va) < 0) {
-	  p->killed = 1;
-	}
+    /* printf("dealing with page fault\n"); */
+    uint64 va = r_stval();
+    pte_t *pte = walk(p->pagetable, va, 0);
+    uint64 pa = PTE2PA(*pte);
+    // page is not cow any more if the reference count is 1 and it was a cow page
+    if (get_ref_count((void*)pa) == 1 && (*pte & PTE_COW) != 0) {
+        *pte = *pte & ~PTE_COW;
+        *pte = *pte | PTE_W;
+    // cow allocation
+    } else if (is_valid_cow(p->pagetable, va) < 0) {
+      p->killed = 1;
+    } else if (cow_alloc(p->pagetable, va) < 0) {
+      p->killed = 1;
+    }
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {

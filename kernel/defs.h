@@ -64,6 +64,7 @@ void*           kalloc(void);
 void            kfree(void *);
 void            kinit(void);
 void            increment_ref(void *);
+int             get_ref_count(void *);
 
 // log.c
 void            initlog(int, struct superblock*);
@@ -142,12 +143,13 @@ void            syscall();
 
 // trap.c
 extern uint     ticks;
+extern uint     page_count_naive;
+extern uint     page_count_with_cow;
 void            trapinit(void);
 void            trapinithart(void);
 extern struct spinlock tickslock;
 void            usertrapret(void);
 int             is_valid_cow(pagetable_t, uint64);
-int             cow_alloc(pagetable_t, uint64);
 
 // uart.c
 void            uartinit(void);
@@ -174,6 +176,7 @@ pte_t*          walk(pagetable_t, uint64, int);
 int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
+int             cow_alloc(pagetable_t, uint64);
 
 // plic.c
 void            plicinit(void);
