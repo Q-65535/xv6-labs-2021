@@ -103,6 +103,32 @@ e1000_transmit(struct mbuf *m)
   // a pointer so that it can be freed after sending.
   //
   
+  acquire(&e1000_lock);
+  uint32 tail_index = regs[E1000_TDT];
+  // printf("transimit triggered...\n");
+  // printf("tx tail is: %d\n", tail_index);
+  // check whether previous transmission is done
+  if ((tx_ring[tail_index].status & E1000_TXD_STAT_DD) == 0) {
+    // @Cleanup: for now, lets just panic to stop the program
+    panic("e1000 transimission error: previous transmision has not yet finished!");
+    release(&e1000_lock);
+    return -1;
+  }
+  // free the previous transmitted mbuf
+  // @Note: we can't free memory pointed to by tx_ring[tail_index].addr, since there is a headroom in m, we
+  // should free the whole memory space pointed to by m
+  if (tx_mbufs[tail_index]) {
+    mbuffree(tx_mbufs[tail_index]);
+  }
+  // fill content to the tail descriptor
+  tx_ring[tail_index].addr = (uint64) m->head;
+  tx_ring[tail_index].length = (uint16) m->len;
+  tx_ring[tail_index].cmd = E1000_TXD_CMD_EOP | E1000_TXD_CMD_RS;
+  tx_mbufs[tail_index] = m;
+  // advance the tail pointer, tell the e1000 that now we can send the data
+  regs[E1000_TDT] = (regs[E1000_TDT] + 1) % TX_RING_SIZE;
+
+  release(&e1000_lock);
   return 0;
 }
 
@@ -115,6 +141,22 @@ e1000_recv(void)
   // Check for packets that have arrived from the e1000
   // Create and deliver an mbuf for each packet (using net_rx()).
   //
+  //
+  while(1) {
+    uint32 tail_index = (regs[E1000_RDT] + 1) % RX_RING_SIZE;
+    // printf("recieve triggered...\n");
+    // printf("rx tail is: %d\n", tail_index);
+    if (!(rx_ring[tail_index].status & E1000_RXD_STAT_DD)) {
+      return;
+    }
+    rx_mbufs[tail_index]->len = rx_ring[tail_index].length;
+    net_rx(rx_mbufs[tail_index]);
+    // allocate a new mbuf for hardware
+    rx_mbufs[tail_index] = mbufalloc(0);
+    rx_ring[tail_index].addr = (uint64) rx_mbufs[tail_index]->head;
+    rx_ring[tail_index].status = 0;
+    regs[E1000_RDT] = tail_index;
+  }
 }
 
 void
